@@ -1,41 +1,49 @@
 ```java
 @Override
-  public String uploadFileToBucketPath(String bucketName, String folderName, String fileName, String pacContent) {
-    if (!amazonS3.doesBucketExistV2(bucketName)) {
-      createBucket(bucketName);
-    }
+public String upload(String bucketName,
+                     String key,
+                     InputStream in,
+                     long contentLength,
+                     String contentType,
+                     boolean publicRead) {
 
-    ListObjectsRequest listObjectsRequest = new ListObjectsRequest()
-            .withBucketName(bucketName)
-            .withDelimiter("/")
-            .withMaxKeys(300);
-    ObjectListing objectListing = amazonS3.listObjects(listObjectsRequest);
-    boolean isExist = false;
-    for (String commonPrefixes : objectListing.getCommonPrefixes()) {
-      if(StringUtils.hasText(commonPrefixes) && commonPrefixes.contains("pac")) {
-        isExist = true;
-        break;
-      }
-    }
-
-    if(!isExist) {
-      ObjectMetadata objectMetadata = new ObjectMetadata();
-      objectMetadata.setContentLength(0L);
-      objectMetadata.setContentType("application/x-directory");
-      PutObjectRequest putObjectRequest = new PutObjectRequest(bucketName, folderName, new ByteArrayInputStream(new byte[0]), objectMetadata);
-      amazonS3.putObject(putObjectRequest);
-      setObjectACL(bucketName, folderName);
-    }
-
-    InputStream inputStream = new ByteArrayInputStream(pacContent.getBytes());
-    ObjectMetadata metadata = new ObjectMetadata();
-    String filePath = folderName + fileName;
-    PutObjectRequest request = new PutObjectRequest(bucketName, filePath, inputStream, metadata);
-    amazonS3.putObject(request);
-    setObjectACL(bucketName, filePath);
-
-    return amazonS3.getUrl(bucketName, filePath).toString();
+  if (!amazonS3.doesBucketExistV2(bucketName)) {
+    createBucket(bucketName);
   }
+
+  ObjectMetadata metadata = new ObjectMetadata();
+  if (contentLength >= 0) metadata.setContentLength(contentLength);
+  if (contentType != null && !contentType.isBlank()) metadata.setContentType(contentType);
+
+  PutObjectRequest req = new PutObjectRequest(bucketName, key, in, metadata);
+
+  if (publicRead) {
+    req.withCannedAcl(CannedAccessControlList.PublicRead);
+  }
+
+  amazonS3.putObject(req);
+
+  return amazonS3.getUrl(bucketName, key).toString();
+}
+
+@Override
+  public String uploadFileToBucketPath(String bucketName, String folderName, String fileName, String pacContent) {
+  String key = normalizeKey(folderName, fileName); // "pac/" + "xxx.pac" 형태로 안전하게
+  byte[] bytes = pacContent.getBytes(StandardCharsets.UTF_8);
+
+  return upload(bucketName,
+          key,
+          new ByteArrayInputStream(bytes),
+          bytes.length,
+          "text/plain; charset=utf-8",
+          true);
+  }
+
+private String normalizeKey(String folderName, String fileName) {
+  String f = folderName == null ? "" : folderName.trim();
+  if (!f.isEmpty() && !f.endsWith("/")) f += "/";
+  return f + fileName;
+}
 ```
 
 ```java
